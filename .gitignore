@@ -2,6 +2,6 @@
 .DS_Store
 build/
 dist/
-pysparse.egg-info/
+pysparse_array.egg-info/
 pyproject.toml
 .github/workflows/publish-to-pypi.yml

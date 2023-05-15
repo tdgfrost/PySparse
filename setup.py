@@ -7,25 +7,17 @@ with open('HISTORY.md') as history_file:
     HISTORY = history_file.read()
 
 setup_args = dict(
-    name='pysparse',
-    version='0.1.0',
+    name='pysparse-array',
+    version='0.1.1',
     description='Package to encode and decode large OOM numpy arrays as Sparse binaries',
     long_description_content_type="text/markdown",
     long_description=README + '\n\n' + HISTORY,
-    license='MIT',
     packages=find_packages(),
     author='Thomas Frost',
     author_email='tdgfrost@gmail.com',
-    keywords=['PySparse', 'SparseArray'],
     url='https://github.com/tdgfrost/PySparse',
-    download_url=''
+    download_url='https://pypi.org/project/pysparse-array/'
 )
 
-install_requires = [
-    'numpy>=1.18.0',
-    'tqdm>=4.46.0',
-    'numba>=0.49.0',
-]
-
 if __name__ == '__main__':
-    setup(**setup_args, install_requires=install_requires)
+    setup(**setup_args)

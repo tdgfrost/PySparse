@@ -1,6 +1,6 @@
 This package exists for one purpose: to encode and decode sparse numpy arrays into a more space-efficient format. Its target audience is users requiring rapid access to massive arrays without memory issues.
 
-Ordinarily, a numpy array can be stored in one of two (categorical) ways:
+Ordinarily, a numpy array might be stored in one of a couple of ways:
 1) As a binary
 2) As a compressed file format (e.g., h5df)
 
