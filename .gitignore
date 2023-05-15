@@ -3,3 +3,5 @@
 build/
 dist/
 pysparse.egg-info/
+pyproject.toml
+.github/workflows/publish-to-pypi.yml
