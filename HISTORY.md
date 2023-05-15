@@ -1,4 +1,4 @@
-# Changelog
+#Changelog
 
 All notable changes to the `PySparse` package will be documented in this file.
 
