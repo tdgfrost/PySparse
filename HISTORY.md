@@ -4,6 +4,21 @@ All notable changes to the `PySparse` package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.4] - 2023-05-16
+
+### Added
+- N/A
+
+### Fixed
+- N/A
+
+### Changed
+- to_sparse() default behaviour will now convert an array in one go if the array is already all in memory (i.e., np.ndarray), or else via chunksize if the array is memory-mapped (np.memmap).
+
+### Removed
+- N/A
+
+
 ## [0.1.3] - 2023-05-15
 
 ### Added

@@ -36,7 +36,7 @@ def __calc_sparse_shape(array: np.ndarray, chunksize: int, verbose: bool) -> tup
     shape = array.shape
     announce_progress('Identifying sparse shape...') if verbose else None
 
-    if chunksize is None:
+    if (chunksize is None) or (type(array) is np.ndarray):
         data_shape = np.count_nonzero(array)
 
     else:
@@ -63,7 +63,7 @@ def __convert_to_sparse_data(array_chunk: np.ndarray, iteration: int) -> (np.nda
     return sparse_coords, sparse_values
 
 
-def __write_sparse_arrays(array: np.ndarray, path: 'str', chunksize: int, verbose: bool) -> None:
+def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize: int, verbose: bool) -> None:
     """
     Simultaneously convert and write a dense array to sparse arrays
     :param array: dense numpy array to be converted
@@ -95,13 +95,11 @@ def __write_sparse_arrays(array: np.ndarray, path: 'str', chunksize: int, verbos
     announce_progress('Writing sparse arrays...') if verbose else None
     sparse_index = 0
 
-    if chunksize is None:
+    if (chunksize is None) or (type(array) is np.ndarray):
         sparse_coords, sparse_values = __convert_to_sparse_data(array, 0)
 
-        memmap_sparse_coords[sparse_index:sparse_index + sparse_coords.shape[0]] = sparse_coords
-        memmap_sparse_data[sparse_index:sparse_index + sparse_coords.shape[0]] = sparse_values
-
-        sparse_index += sparse_coords.shape[0]
+        memmap_sparse_coords[:] = sparse_coords
+        memmap_sparse_data[:] = sparse_values
 
     else:
         for chunk_idx in tqdm(range(0, dense_shape[0], chunksize)) if verbose else range(0, dense_shape[0], chunksize):
@@ -115,12 +113,12 @@ def __write_sparse_arrays(array: np.ndarray, path: 'str', chunksize: int, verbos
     return
 
 
-def to_sparse(array: np.ndarray, savepath: 'str', chunksize=1000, verbose=True) -> None:
+def to_sparse(array: np.ndarray or np.memmap, savepath: 'str', chunksize=1000, verbose=True) -> None:
     """
     Convert and write a dense array to a sparse array
     :param array: numpy array to be converted
     :param savepath: filepath to write sparse array to
-    :param chunksize: number of rows to process at a time - if None, will process the whole array in memory
+    :param chunksize: number of memmap rows to process at a time if array is np.memmap - if None, will convert the whole array in memory
     :param verbose: whether to print progress statements
     :return: None
     """

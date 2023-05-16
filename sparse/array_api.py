@@ -18,14 +18,15 @@ def load_sparse(data_path: str, coords_path: str, shape: str or tuple, mode='r')
 class SparseArray:
     def __init__(self, data_path: str, coords_path: str, shape: str or tuple, mode='r'):
         self.data = np.load(data_path, mmap_mode=mode)
+        self.data_dtype = self.data.dtype
+
         self.coords = np.load(coords_path, mmap_mode=mode)
+        self.coords_shape = self.coords.shape
 
         if shape is tuple:
             self.dense_shape = shape
         else:
             self.dense_shape = tuple(np.load(shape))
-
-        self.coords_shape = self.coords.shape
 
     def __getitem__(self, items):
         """"
