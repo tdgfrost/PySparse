@@ -1,5 +1,6 @@
 from setuptools import setup, find_packages
 
+
 with open('README.md') as readme_file:
     README = readme_file.read()
 
@@ -8,7 +9,7 @@ with open('HISTORY.md') as history_file:
 
 setup_args = dict(
     name='pysparse-array',
-    version='0.1.1',
+    version='0.1.3',
     description='Package to encode and decode large OOM numpy arrays as Sparse binaries',
     long_description_content_type="text/markdown",
     long_description=README + '\n\n' + HISTORY,

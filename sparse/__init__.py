@@ -1,5 +1,6 @@
-from . import sparse
+from .core import to_sparse, load_sparse
 
 __all__ = [
-    'sparse'
+    'load_sparse',
+    'to_sparse'
 ]
