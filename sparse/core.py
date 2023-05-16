@@ -3,7 +3,6 @@ from numpy.lib.format import open_memmap
 from tqdm import tqdm
 import os
 from numba import njit, types
-from .array_api import SparseArray
 
 
 """
@@ -195,15 +194,4 @@ def find_indices(coords, row_idx, start, end):
 
         return start_index, end_index
 
-
-def load_sparse(data_path: str, coords_path: str, shape: str or tuple, mode='r'):
-    """
-    Load a (memory-mapped) sparse array from disk
-    :param data_path: path to sparse data array
-    :param coords_path: path to sparse coordinates array
-    :param shape: shape of the dense array, as either tuple or path to numpy array containing shape
-    :param mode: mode to open the sparse arrays in (e.g., read-only, read-write, etc.) - r/r+/w
-    :return: SparseArray object
-    """
-    return SparseArray(data_path, coords_path, shape, mode)
 

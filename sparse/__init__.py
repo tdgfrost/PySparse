@@ -1,4 +1,5 @@
-from .core import to_sparse, load_sparse
+from .core import to_sparse
+from .array_api import load_sparse
 
 __all__ = [
     'load_sparse',
