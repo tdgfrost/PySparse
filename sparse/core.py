@@ -2,7 +2,7 @@ import numpy as np
 from numpy.lib.format import open_memmap
 from tqdm import tqdm
 import os
-from numba import njit, types
+from numba import njit, types, prange
 
 
 """

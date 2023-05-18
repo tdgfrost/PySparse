@@ -1,15 +1,102 @@
-This package exists for one purpose: to encode and decode sparse numpy arrays into a more space-efficient format. Its target audience is users requiring rapid access to massive arrays without memory issues.
+# PySparse
 
-Ordinarily, a numpy array might be stored in one of a couple of ways:
-1) As a binary
-2) As a compressed file format (e.g., h5df)
+This package exists for one purpose: to encode and decode sparse NumPy arrays into a more space-efficient format. Its target audience is users requiring rapid access to massive arrays without out-of-memory issues.
 
-The advantage of binary is that the file can be memory mapped, allowing access to sections of the array without out-of-memory (OOM) issues. The disadvantage is that such binaries are, necessarily, of a very large file size.
+For machine-learning purposes, a NumPy array might be stored in one of two formats:
+1) As a binary (extremely large, very fast to access)
+2) As a compressed file format like HDF5 (much smaller, much slower to access)
 
-The advantage of compressed file formats is that they provide a much smaller disk space footprint, but at the cost of slower file access. Even h5df file formats, which can provide memory-mapped services of their own, will still be necessarily slow because the non-contiguous array has to be searched to find the relevant indices.
+Both of the above can be accessed in a memory-mapped fashion (to avoid OOM errors), but both require concessions in the form of either size or speed.
 
-PySparse takes a given numpy array, and encodes it into two (smaller) arrays - a 1D array containing the non-zero values, and a 2D array containing the mapped coordinates for these values in the original 'dense' numpy array.
+PySparse tries to find a middle ground. The package takes a given NumPy array, and encodes it into two (smaller) arrays - a 1D array containing all non-zero values, and a 2D array containing the mapped coordinates for these values in the original 'dense' array.
 
-The resultant arrays can then be re-loaded into the SparseArray class, from which indexing can be performed to return to the original dense array.
+These mapped arrays can then be re-loaded into a SparseArray class, from which indexing can be performed as if you were operating on the original dense array. PySparse will decode the desired indices on-the-fly using memory-mapping of the encoded coordinates, and provide the desired subarray in-memory.
 
-SparseArray is NOT a child class of Numpy, and numpy functions cannot be performed directly on it (for now). To do this, you would need to manually implement a solution yourself e.g., decoding the entire array at once using [:], or using a for-loop to iterate through the SparseArray in chunks to avoid OOM errors. 
+# Example Code
+
+PySparse only provides you with two functions - one to encode an array, and one to load the encoded arrays.
+
+**Encoding an Array**
+
+```
+from sparse import to_sparse, load_sparse
+import os
+
+print(to_sparse.__doc__)
+
+    Convert and write a dense array to a sparse array
+    :param array: numpy array to be converted
+    :param savepath: filepath to write sparse array to
+    :param chunksize: number of memmap rows to process at a time if array is np.memmap - if None, will convert the whole array in memory
+    :param verbose: whether to print progress statements
+    :return: None
+
+array = np.random.default_rng().integers(low=0, high=5, size=(10000))
+
+to_sparse(array=array,
+	  savepath='/.',
+	  chunksize=None,
+	  verbose=True)
+
+==================================================
+Identifying sparse shape...
+==================================================
+==================================================
+Writing sparse arrays...
+==================================================
+
+print(os.listdirs(savepath))
+
+['dense_shape.npy', 'sparse_data.npy', 'sparse_coords.npy']
+
+```
+**Decoding an Array**
+```
+print(load_sparse.__doc__)
+
+    Load a (memory-mapped) sparse array from disk
+    :param data_path: path to sparse data array OR parent directory containing 'sparse_data.npy', 'sparse_coords.npy', and 'dense_shape.npy' arrays
+    :param coords_path: (optional) path to sparse coordinates array
+    :param shape: (optional) shape of the dense array, as either tuple or path to numpy array containing shape
+    :return: SparseArray object
+
+
+encoded_array = load_sparse(data_path='./')
+
+print(encoded_array[100:110])
+
+array([3, 0, 4, 4, 2, 2, 3, 4, 0, 0])
+
+print(array[100:110])
+
+array([3, 0, 4, 4, 2, 2, 3, 4, 0, 0])
+
+print(np.array_equal(array, encoded_array[:]))
+
+True
+```
+# Benchmarks
+
+Sample data is a sparse array of size (1102729, 288, 63).
+
+**Relative Sizes**
+- .npy binary = 80GB
+- HDF5 with maximal gzip compression = 1.79GB
+- SparseArray directory = 11.76GB
+
+**Loading first 10,000 rows**
+- .npy binary (memory-mapped) = 39.3 µs (757 ns with cache)
+- HDF5 = 957 ms (898 ms with cache)
+- SparseArray = 626 ms (387 ms with cache)
+
+**Loading random 10,000 rows**
+- .npy binary (memory-mapped) = 4.24 seconds (88 ms with cache)
+- HDF5 = 32 seconds (31 seconds with cache)
+- SparseArray = 6.52 seconds (374 ms with cache)
+
+Of course, there are so many caveats to this (sparsity of data, shape of data, computational power available, etc), so you'll just have to try it yourself to see whether it works for you.
+
+## Important Considerations
+- SparseArray is NOT a child class of NumPy, and you can't perform functions directly on it. All operations must be done following an index call.
+- SparseArray is NOT a stable package. It is cobbled together using a mix of other packages, and you should always keep a copy of your data in a gold-standard format (e.g., HDF5). You should also perform basic sanity-checks of your own to ensure the encoded array does match the original as expected.
+- At present, SparseArray is read-only and does NOT support in-place modifying of the data. If you wish to change the data, you will need to change the gold-standard and re-encode your data from scratch.

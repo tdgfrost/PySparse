@@ -4,13 +4,28 @@ All notable changes to the `PySparse` package will be documented in this file.
 
 ## [Unreleased]
 
-## [0.1.4] - 2023-05-16
+## [0.1.5] - 2023-05-18
 
 ### Added
 - N/A
 
 ### Fixed
 - N/A
+
+### Changed
+- Further optimised indexing through use of parallel find_indices search, with x2 speed-up.
+
+### Removed
+- N/A
+
+## [0.1.4] - 2023-05-16
+
+### Added
+- load_sparse() can now take either a single path to the parent directory of the three arrays, or individual paths to each
+- if using a single path to parent directory to load the sparse arrays, the files must be kept named as the standard 'sparse_data.npy', 'sparse_coords.npy', and 'dense_shape.npy' filenames
+
+### Fixed
+- Fixed issues with indexing for 1D arrays / rows where the values are all zero
 
 ### Changed
 - to_sparse() default behaviour will now convert an array in one go if the array is already all in memory (i.e., np.ndarray), or else via chunksize if the array is memory-mapped (np.memmap).

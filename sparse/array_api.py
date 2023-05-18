@@ -1,18 +1,25 @@
 import numpy as np
-from numba import njit, types
+from numba import njit, types, prange, typed
+from numpy import ndarray
+
 from .core import find_indices
+import os
 
 
-def load_sparse(data_path: str, coords_path: str, shape: str or tuple, mode='r'):
+def load_sparse(data_path: str, coords_path=None, shape=None):
     """
     Load a (memory-mapped) sparse array from disk
-    :param data_path: path to sparse data array
-    :param coords_path: path to sparse coordinates array
-    :param shape: shape of the dense array, as either tuple or path to numpy array containing shape
-    :param mode: mode to open the sparse arrays in (e.g., read-only, read-write, etc.) - r/r+/w
+    :param data_path: path to sparse data array OR parent directory containing 'sparse_data.npy', 'sparse_coords.npy', and 'dense_shape.npy' arrays
+    :param coords_path: (optional) path to sparse coordinates array
+    :param shape: (optional) shape of the dense array, as either tuple or path to numpy array containing shape
     :return: SparseArray object
     """
-    return SparseArray(data_path, coords_path, shape, mode)
+    if os.path.isdir(data_path):
+        coords_path = os.path.join(data_path, 'sparse_coords.npy')
+        shape = os.path.join(data_path, 'dense_shape.npy')
+        data_path = os.path.join(data_path, 'sparse_data.npy')
+
+    return SparseArray(data_path, coords_path, shape, mode='r')
 
 
 class SparseArray:
@@ -114,29 +121,39 @@ class SparseArray:
         find_coords, coords_present = search_function[type(row_idx)](self.coords, row_idx,
                                                                      maxlen=self.coords_shape[0])
 
+        find_coords = np.concatenate([np.arange(start, end+1) for start, end in find_coords if start != -1])
+
         # Assuming the row indices have non-zero data...
         if coords_present:
             # Locate the coordinates of the non-zero data in the original dense array
             target_coords = self.coords[find_coords]
-            target_coords[:, 0] -= target_coords[:, 0].min()
+
+            # Some slightly complex indexing to identify the non-zero cells of the (indexed) target array
+            nonzero_row_indices_unique = np.where(np.isin(row_idx, np.unique(target_coords[:, 0])))[0]
+            nonzero_row_indices_unique_idx = np.unique(target_coords[:, 0], return_index=True)[1]
+
+            target_coords[:, 0] = -1
+            target_coords[nonzero_row_indices_unique_idx, 0] = nonzero_row_indices_unique
+
+            target_coords[:, 0] = np.maximum.accumulate(target_coords[:, 0], axis=0)
 
             # Re-create the dense array (of the shape requested) with all zeros
-            target_data = np.zeros((1,) + self.dense_shape[1:]) if isinstance(row_idx, int) else np.zeros(
-                (len(row_idx),) + self.dense_shape[1:])
+            target_data = np.zeros((1,) + self.dense_shape[1:], dtype=self.data_dtype) if isinstance(row_idx, int) else np.zeros(
+                (len(row_idx),) + self.dense_shape[1:], dtype=self.data_dtype)
 
             # Fill the dense array with the non-zero data at the target coordinates
             target_data[tuple(target_coords.T)] = self.data[find_coords]
         else:
             # If the row indices have no non-zero data, return an array of zeros
-            target_data = np.zeros((1,) + self.dense_shape[1:]) if isinstance(row_idx, int) else np.zeros(
-                (len(row_idx),) + self.dense_shape[1:])
+            target_data = np.zeros((1,) + self.dense_shape[1:], dtype=self.data_dtype) if isinstance(row_idx, int) else np.zeros(
+                (len(row_idx),) + self.dense_shape[1:], dtype=self.data_dtype)
 
         return target_data
 
     @staticmethod
     @njit(types.Tuple((types.int64[:], types.boolean))(types.Array(types.int32, 2, 'C', readonly=True), types.int64,
                                                        types.int64))
-    def __find_rows_int(coords: np.ndarray, row_idx: int, maxlen: int) -> types.Tuple:
+    def __find_rows_int(coords: np.ndarray, row_idx: int, maxlen: int) -> tuple[ndarray, bool]:
         """
         Efficiently search the coordinates to find the indices that match the given row index
         :param coords: numpy 2D array of coordinates
@@ -153,8 +170,9 @@ class SparseArray:
         return np.array([i for i in range(start_point, end_point + 1)]), coords_present
 
     @staticmethod
-    @njit(types.Tuple((types.int64[:], types.boolean))(types.Array(types.int32, 2, 'C', readonly=True),
-                                                       types.Array(types.int64, 1, 'A'), types.int64))
+    @njit(types.Tuple((types.ListType(types.UniTuple(types.int64, 2)), types.boolean))(types.Array(types.int32, 2, 'C', readonly=True),
+                                                                                       types.Array(types.int64, 1, 'A'), types.int64),
+          parallel=True)
     def __find_rows_ndarray(coords: np.ndarray, row_idx: np.ndarray, maxlen: int) -> (np.ndarray, bool):
         """
         Efficiently search the coordinates to find the indices that match the given row indices
@@ -164,16 +182,14 @@ class SparseArray:
         :return: numpy array of coordinates that match the given row indices
         """
 
-        find_coords = []
+        find_coords = typed.List([(-1, -1) for _ in range(len(row_idx))])
 
-        for row in np.sort(row_idx):
+        for row in prange(len(row_idx)):
             # Start with an efficient binary tree search algorithm for identifying the start and end indices
-            start_point, end_point = find_indices(coords, row, 0, maxlen - 1)
-            find_coords.extend([i for i in range(start_point, end_point + 1)]) if start_point >= 0 else None
+            start_point, end_point = find_indices(coords, row_idx[row], 0, maxlen - 1)
+            find_coords[row] = (start_point, end_point)
 
-        coords_present = True if find_coords else False
-
-        return np.array(find_coords), coords_present
+        return find_coords, True
 
     def __get_item(self, items) -> np.ndarray:
         """
@@ -187,7 +203,7 @@ class SparseArray:
         target_data = self.__get_row(items[0])
 
         # Then index the dense array with the remaining indices as usual
-        items[0] = slice(None)
+        items[0] = Ellipsis
         target_data = target_data[tuple(items)]
 
         return target_data
