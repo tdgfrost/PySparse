@@ -19,10 +19,10 @@ PySparse only provides you with two functions - one to encode an array, and one 
 **Encoding an Array**
 
 ```
-from sparse import to_sparse, load_sparse
-import os
+> from sparse import to_sparse, load_sparse
+> import os
 
-print(to_sparse.__doc__)
+> print(to_sparse.__doc__)
 
     Convert and write a dense array to a sparse array
     :param array: numpy array to be converted
@@ -31,12 +31,11 @@ print(to_sparse.__doc__)
     :param verbose: whether to print progress statements
     :return: None
 
-array = np.random.default_rng().integers(low=0, high=5, size=(10000))
-
-to_sparse(array=array,
-	  savepath='/.',
-	  chunksize=None,
-	  verbose=True)
+> array = np.random.default_rng().integers(low=0, high=5, size=(10000))
+> to_sparse(array=array,
+	        savepath='/.',
+	        chunksize=None,
+	        verbose=True)
 
 ==================================================
 Identifying sparse shape...
@@ -45,14 +44,14 @@ Identifying sparse shape...
 Writing sparse arrays...
 ==================================================
 
-print(os.listdirs(savepath))
+> print(os.listdirs(savepath))
 
 ['dense_shape.npy', 'sparse_data.npy', 'sparse_coords.npy']
 
 ```
 **Decoding an Array**
 ```
-print(load_sparse.__doc__)
+> print(load_sparse.__doc__)
 
     Load a (memory-mapped) sparse array from disk
     :param data_path: path to sparse data array OR parent directory containing 'sparse_data.npy', 'sparse_coords.npy', and 'dense_shape.npy' arrays
@@ -60,18 +59,16 @@ print(load_sparse.__doc__)
     :param shape: (optional) shape of the dense array, as either tuple or path to numpy array containing shape
     :return: SparseArray object
 
-
-encoded_array = load_sparse(data_path='./')
-
-print(encoded_array[100:110])
+> encoded_array = load_sparse(data_path='./')
+> print(encoded_array[100:110])
 
 array([3, 0, 4, 4, 2, 2, 3, 4, 0, 0])
 
-print(array[100:110])
+> print(array[100:110])
 
 array([3, 0, 4, 4, 2, 2, 3, 4, 0, 0])
 
-print(np.array_equal(array, encoded_array[:]))
+> print(np.array_equal(array, encoded_array[:]))
 
 True
 ```

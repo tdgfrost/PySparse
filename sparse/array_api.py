@@ -1,34 +1,39 @@
 import numpy as np
 from numba import njit, types, prange, typed
-from numpy import ndarray
-
-from .core import find_indices
+import pickle
 import os
 
 
-def load_sparse(data_path: str, coords_path=None, shape=None):
+def load_sparse(data_path: str, coords_path=None, coords_dict_path = None, shape=None):
     """
     Load a (memory-mapped) sparse array from disk
     :param data_path: path to sparse data array OR parent directory containing 'sparse_data.npy', 'sparse_coords.npy', and 'dense_shape.npy' arrays
     :param coords_path: (optional) path to sparse coordinates array
+    :param coords_dict_path: (optional) path to dictionary mapping sparse to dense row coordinates (only)
     :param shape: (optional) shape of the dense array, as either tuple or path to numpy array containing shape
     :return: SparseArray object
     """
     if os.path.isdir(data_path):
         coords_path = os.path.join(data_path, 'sparse_coords.npy')
+        coords_dict_path = os.path.join(data_path, 'sparse_coords_dict.pkl')
         shape = os.path.join(data_path, 'dense_shape.npy')
         data_path = os.path.join(data_path, 'sparse_data.npy')
 
-    return SparseArray(data_path, coords_path, shape, mode='r')
+    return SparseArray(data_path, coords_path, coords_dict_path, shape, mode='r')
 
 
 class SparseArray:
-    def __init__(self, data_path: str, coords_path: str, shape: str or tuple, mode='r'):
+    def __init__(self, data_path: str, coords_path: str, coords_dict_path, shape: str or tuple, mode='r'):
         self.data = np.load(data_path, mmap_mode=mode)
         self.data_dtype = self.data.dtype
 
         self.coords = np.load(coords_path, mmap_mode=mode)
         self.coords_shape = self.coords.shape
+        with open(coords_dict_path, 'rb') as f:
+            self.coords_dict = typed.Dict.empty(key_type=types.int64, value_type=types.UniTuple(types.int64, count=2))
+            coords_dict = pickle.load(f)
+            for key, value in coords_dict.items():
+                self.coords_dict[key] = value
 
         if shape is tuple:
             self.dense_shape = shape
@@ -118,8 +123,7 @@ class SparseArray:
                            np.ndarray: self.__find_rows_ndarray}
 
         # Find the target coordinates for the given row indices
-        find_coords, coords_present = search_function[type(row_idx)](self.coords, row_idx,
-                                                                     maxlen=self.coords_shape[0])
+        find_coords, coords_present = search_function[type(row_idx)](self.coords_dict, row_idx)
 
         find_coords = np.concatenate([np.arange(start, end+1) for start, end in find_coords if start != -1])
 
@@ -151,9 +155,10 @@ class SparseArray:
         return target_data
 
     @staticmethod
-    @njit(types.Tuple((types.int64[:], types.boolean))(types.Array(types.int32, 2, 'C', readonly=True), types.int64,
-                                                       types.int64))
-    def __find_rows_int(coords: np.ndarray, row_idx: int, maxlen: int) -> tuple[ndarray, bool]:
+    @njit(types.Tuple((types.ListType(types.UniTuple(types.int64, 2)),
+                       types.boolean))(types.DictType(types.int64, types.UniTuple(types.int64, count=2)),
+                                       types.int64))
+    def __find_rows_int(coords_dict, row_idx: int) -> tuple[list[tuple[int, int]], bool]:
         """
         Efficiently search the coordinates to find the indices that match the given row index
         :param coords: numpy 2D array of coordinates
@@ -163,17 +168,18 @@ class SparseArray:
         """
 
         # Start with an efficient binary tree search algorithm for identifying the start and end indices
-        start_point, end_point = find_indices(coords, row_idx, 0, maxlen - 1)
+        find_coords = typed.List([(-1, -1)])
+        find_coords[0] = coords_dict[row_idx]
 
-        coords_present = True if start_point >= 0 else False
+        coords_present = True if find_coords[0][0] >= 0 else False
 
-        return np.array([i for i in range(start_point, end_point + 1)]), coords_present
+        return find_coords, coords_present
 
     @staticmethod
-    @njit(types.Tuple((types.ListType(types.UniTuple(types.int64, 2)), types.boolean))(types.Array(types.int32, 2, 'C', readonly=True),
-                                                                                       types.Array(types.int64, 1, 'A'), types.int64),
+    @njit(types.Tuple((types.ListType(types.UniTuple(types.int64, 2)), types.boolean))(types.DictType(types.int64, types.UniTuple(types.int64, count=2)),
+                                                                                       types.Array(types.int64, 1, 'A')),
           parallel=True)
-    def __find_rows_ndarray(coords: np.ndarray, row_idx: np.ndarray, maxlen: int) -> (np.ndarray, bool):
+    def __find_rows_ndarray(coords_dict, row_idx: np.ndarray) -> tuple[list[tuple[int, int]], bool]:
         """
         Efficiently search the coordinates to find the indices that match the given row indices
         :param coords: numpy 2D array of coordinates
@@ -183,13 +189,15 @@ class SparseArray:
         """
 
         find_coords = typed.List([(-1, -1) for _ in range(len(row_idx))])
+        coords_present = False
 
         for row in prange(len(row_idx)):
-            # Start with an efficient binary tree search algorithm for identifying the start and end indices
-            start_point, end_point = find_indices(coords, row_idx[row], 0, maxlen - 1)
-            find_coords[row] = (start_point, end_point)
+            find_coords[row] = coords_dict[row_idx[row]]
+            coords_present += True if find_coords[row][0] >= 0 else False
 
-        return find_coords, True
+        coords_present = bool(coords_present)
+
+        return find_coords, coords_present
 
     def __get_item(self, items) -> np.ndarray:
         """

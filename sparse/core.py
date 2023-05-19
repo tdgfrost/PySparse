@@ -2,7 +2,8 @@ import numpy as np
 from numpy.lib.format import open_memmap
 from tqdm import tqdm
 import os
-from numba import njit, types, prange
+from numba import njit, types
+import pickle
 
 
 """
@@ -31,7 +32,7 @@ def __calc_sparse_shape(array: np.ndarray, chunksize: int, verbose: bool) -> tup
     :param verbose: whether to print progress statements
     :return: tuple of shape
     """
-
+    # At some point, try to njit and parallelise this
     data_shape = 0
     shape = array.shape
     announce_progress('Identifying sparse shape...') if verbose else None
@@ -59,8 +60,17 @@ def __convert_to_sparse_data(array_chunk: np.ndarray, iteration: int) -> (np.nda
     sparse_coords = list(sparse_coords)
     sparse_coords[0] += iteration
     sparse_coords = np.stack(sparse_coords, axis=1)
+    sparse_coords_dict = {}
 
-    return sparse_coords, sparse_values
+    for dense_row in range(sparse_coords[:, 0].min(), sparse_coords[:, 0].max() + 1):
+        sparse_to_dense_coords = np.where(sparse_coords[:, 0] == dense_row)[0]
+        if any(sparse_to_dense_coords):
+            sparse_coords_dict[dense_row] = (np.where(sparse_coords[:, 0] == dense_row)[0].min(),
+                                             np.where(sparse_coords[:, 0] == dense_row)[0].max())
+        else:
+            sparse_coords_dict[dense_row] = (-1, -1)
+
+    return sparse_coords, sparse_values, sparse_coords_dict
 
 
 def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize: int, verbose: bool) -> None:
@@ -96,19 +106,26 @@ def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize
     sparse_index = 0
 
     if (chunksize is None) or (type(array) is np.ndarray):
-        sparse_coords, sparse_values = __convert_to_sparse_data(array, 0)
+        sparse_coords, sparse_values, sparse_coords_dict = __convert_to_sparse_data(array, 0)
 
         memmap_sparse_coords[:] = sparse_coords
         memmap_sparse_data[:] = sparse_values
+        with open(os.path.join(path, 'sparse_coords_dict.pkl'), 'wb') as f:
+            pickle.dump(sparse_coords_dict, f)
 
     else:
+        sparse_coords_dict = {}
         for chunk_idx in tqdm(range(0, dense_shape[0], chunksize)) if verbose else range(0, dense_shape[0], chunksize):
-            sparse_coords, sparse_values = __convert_to_sparse_data(array[chunk_idx:chunk_idx + chunksize], chunk_idx)
+            sparse_coords, sparse_values, sparse_coords_dict_iter = __convert_to_sparse_data(array[chunk_idx:chunk_idx + chunksize], chunk_idx)
 
             memmap_sparse_coords[sparse_index:sparse_index + sparse_coords.shape[0]] = sparse_coords
             memmap_sparse_data[sparse_index:sparse_index + sparse_coords.shape[0]] = sparse_values
 
             sparse_index += sparse_coords.shape[0]
+            sparse_coords_dict.update(sparse_coords_dict_iter)
+
+        with open(os.path.join(path, 'sparse_coords_dict.pkl'), 'wb') as f:
+            pickle.dump(sparse_coords_dict, f)
 
     return
 
@@ -127,69 +144,3 @@ def to_sparse(array: np.ndarray or np.memmap, savepath: 'str', chunksize=1000, v
 
     __write_sparse_arrays(array, savepath, chunksize, verbose)
     return
-
-
-@njit(types.UniTuple(types.int64, 2)(types.Array(types.int32, 2, 'C', readonly=True), types.int64, types.int64,
-                                     types.int64), cache=True)
-def find_indices(coords, row_idx, start, end):
-    """
-    Find the start and end indices of a particular row coordinate in a sparse coordinates array
-    :param coords: array of sparse coordinates
-    :param row_idx: row index to find
-    :param start: start index of the array to search from
-    :param end: end index of the array to search to
-    :return:
-    """
-    if start > end:
-        # Target number not found in the array
-        return -1, -1
-
-    mid = (start + end) // 2
-
-    if coords[mid, 0] < row_idx:
-        # Target number is in the right half of the array
-        return find_indices(coords, row_idx, mid + 1, end)
-    elif coords[mid, 0] > row_idx:
-        # Target number is in the left half of the array
-        return find_indices(coords, row_idx, start, mid - 1)
-    else:
-        # Found the target number, now find the start and end indices
-        start_index = end_index = mid
-
-        # Find the start index
-        step = 1
-        while start_index > start and coords[start_index - step, 0] == row_idx:
-            start_index -= step
-            step *= 2
-
-        # Refine the start index using binary search
-        left = start_index - step
-        right = start_index
-        while left < right:
-            mid = (left + right) // 2
-            if coords[mid, 0] == row_idx:
-                start_index = mid
-                right = mid
-            else:
-                left = mid + 1
-
-        # Find the end index
-        step = 1
-        while end_index < end and coords[end_index + step, 0] == row_idx:
-            end_index += step
-            step *= 2
-
-        # Refine the end index using binary search
-        left = end_index
-        right = end_index + step
-        while left < right:
-            mid = (left + right) // 2
-            if coords[mid, 0] == row_idx:
-                end_index = mid
-                left = mid + 1
-            else:
-                right = mid
-
-        return start_index, end_index
-
-

@@ -4,6 +4,18 @@ All notable changes to the `PySparse` package will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Additional "coords_dictionary" file included, which replaces the previous find_indices function and introduces significant speed-up.
+
+### Fixed
+- N/A
+
+### Changed
+- README tidied up a little.
+
+### Removed
+- find_indices now replaced with a static coords_dictionary.pkl file.
+
 ## [0.1.5] - 2023-05-18
 
 ### Added
