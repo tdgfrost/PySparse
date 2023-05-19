@@ -25,7 +25,7 @@ def announce_progress(message: str) -> None:
 
 
 @njit(parallel=True)
-def __calc_sparse_shape(array: np.ndarray, chunksize: int) -> tuple:
+def __calc_sparse_shape(array: np.ndarray) -> tuple:
     """
     Calculate the shape of the (pending) sparse array
     :param array: dense numpy array
@@ -51,21 +51,33 @@ def __convert_to_sparse_data(array_chunk: np.ndarray, iteration: int) -> (np.nda
     """
 
     sparse_coords = np.nonzero(array_chunk)
-    sparse_values = array_chunk[sparse_coords]
+    sparse_values = array_chunk.flatten()[np.flatnonzero(array_chunk)]
     sparse_coords = list(sparse_coords)
     sparse_coords[0] += iteration
     sparse_coords = np.stack(sparse_coords, axis=1)
-    sparse_coords_dict = {}
-
-    for dense_row in range(sparse_coords[:, 0].min(), sparse_coords[:, 0].max() + 1):
-        sparse_to_dense_coords = np.where(sparse_coords[:, 0] == dense_row)[0]
-        if any(sparse_to_dense_coords):
-            sparse_coords_dict[dense_row] = (np.where(sparse_coords[:, 0] == dense_row)[0].min(),
-                                             np.where(sparse_coords[:, 0] == dense_row)[0].max())
-        else:
-            sparse_coords_dict[dense_row] = (-1, -1)
+    sparse_coords_dict = __create_sparse_coords_dictionary(sparse_coords)
 
     return sparse_coords, sparse_values, sparse_coords_dict
+
+
+@njit(parallel=True)
+def __create_sparse_coords_dictionary(sparse_coords):
+    """
+    Convert a chunk of a dense array to sparse data
+    :param sparse_coords: sparse coordinates
+    :return: dictionary mapping dense rows to sparse coordinates
+    """
+    min_value = sparse_coords[:, 0].min()
+    max_value = sparse_coords[:, 0].max()
+    sparse_coords_dict = {i: (-1, -1) for i in range(min_value, max_value+1)}
+
+    for dense_row in prange(min_value, max_value + 1):
+        sparse_to_dense_coords = np.where(sparse_coords[:, 0] == dense_row)[0]
+        if np.any(sparse_to_dense_coords):
+            sparse_coords_dict[dense_row] = (np.where(sparse_coords[:, 0] == dense_row)[0].min(),
+                                             np.where(sparse_coords[:, 0] == dense_row)[0].max())
+
+    return sparse_coords_dict
 
 
 def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize: int, verbose: bool) -> None:
