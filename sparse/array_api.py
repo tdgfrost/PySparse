@@ -2,6 +2,7 @@ import numpy as np
 from numba import njit, types, prange, typed
 import pickle
 import os
+from numpy import ndarray
 
 
 def load_sparse(data_path: str, coords_path=None, coords_dict_path = None, shape=None):
@@ -125,7 +126,7 @@ class SparseArray:
         # Find the target coordinates for the given row indices
         find_coords, coords_present = search_function[type(row_idx)](self.coords_dict, row_idx)
 
-        find_coords = np.concatenate([np.arange(start, end+1) for start, end in find_coords if start != -1])
+        find_coords = np.concatenate(find_coords)
 
         # Assuming the row indices have non-zero data...
         if coords_present:
@@ -155,45 +156,43 @@ class SparseArray:
         return target_data
 
     @staticmethod
-    @njit(types.Tuple((types.ListType(types.UniTuple(types.int64, 2)),
+    @njit(types.Tuple((types.List(types.Array(types.int64, 1, 'C')),
                        types.boolean))(types.DictType(types.int64, types.UniTuple(types.int64, count=2)),
                                        types.int64))
-    def __find_rows_int(coords_dict, row_idx: int) -> tuple[list[tuple[int, int]], bool]:
+    def __find_rows_int(coords_dict, row_idx: int) -> tuple[list[ndarray], bool]:
         """
-        Efficiently search the coordinates to find the indices that match the given row index
-        :param coords: numpy 2D array of coordinates
+        Efficiently search the coordinates to find the indices that match the given row indices
+        :param coords_dict: dictionary mapping each dense row index to the first/last indices of the coordinates
         :param row_idx: target row index (integer)
-        :param maxlen: maximum length of the coordinates array
-        :return: numpy array of coordinates that match the given row index
+        :return: numpy array of coordinates that match the given row indices
         """
 
-        # Start with an efficient binary tree search algorithm for identifying the start and end indices
-        find_coords = typed.List([(-1, -1)])
-        find_coords[0] = coords_dict[row_idx]
-
-        coords_present = True if find_coords[0][0] >= 0 else False
+        start, end = coords_dict[row_idx]
+        find_coords = [np.arange(start, end+1)] if start >= 0 else [np.array([-1])]
+        coords_present = True if start >= 0 else False
 
         return find_coords, coords_present
 
     @staticmethod
-    @njit(types.Tuple((types.ListType(types.UniTuple(types.int64, 2)), types.boolean))(types.DictType(types.int64, types.UniTuple(types.int64, count=2)),
-                                                                                       types.Array(types.int64, 1, 'A')),
+    @njit(types.Tuple((types.List(types.Array(types.int64, 1, 'C')), types.boolean))(types.DictType(types.int64, types.UniTuple(types.int64, count=2)),
+                                                                                     types.Array(types.int64, 1, 'A')),
           parallel=True)
-    def __find_rows_ndarray(coords_dict, row_idx: np.ndarray) -> tuple[list[tuple[int, int]], bool]:
+    def __find_rows_ndarray(coords_dict, row_idx: np.ndarray) -> tuple[list[ndarray], bool]:
         """
         Efficiently search the coordinates to find the indices that match the given row indices
-        :param coords: numpy 2D array of coordinates
+        :param coords_dict: dictionary mapping each dense row index to the first/last indices of the coordinates
         :param row_idx: target row indices (numpy array)
-        :param maxlen: maximum length of the coordinates array
         :return: numpy array of coordinates that match the given row indices
         """
 
-        find_coords = typed.List([(-1, -1) for _ in range(len(row_idx))])
+        find_coords = [np.array([-1]) for _ in range(len(row_idx))]
         coords_present = False
 
         for row in prange(len(row_idx)):
-            find_coords[row] = coords_dict[row_idx[row]]
-            coords_present += True if find_coords[row][0] >= 0 else False
+            start, end = coords_dict[row_idx[row]]
+            find_coords[row] = np.arange(start, end+1) if start >= 0 else np.array([-1])
+
+            coords_present += True if start >= 0 else False
 
         coords_present = bool(coords_present)
 
