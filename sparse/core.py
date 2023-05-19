@@ -2,9 +2,9 @@ import numpy as np
 from numpy.lib.format import open_memmap
 from tqdm import tqdm
 import os
-from numba import njit, types
+from numba import njit, types, typed, prange
 import pickle
-
+from math import ceil
 
 """
 ============================================================
@@ -20,11 +20,12 @@ def announce_progress(message: str) -> None:
     :return: None
     """
 
-    print('\n' + '='*50 + '\n' + message + '\n' + '='*50)
+    print('\n' + '=' * 30 + '\n' + message + '\n' + '=' * 30)
     return
 
 
-def __calc_sparse_shape(array: np.ndarray, chunksize: int, verbose: bool) -> tuple:
+@njit(parallel=True)
+def __calc_sparse_shape(array: np.ndarray, chunksize: int) -> tuple:
     """
     Calculate the shape of the (pending) sparse array
     :param array: dense numpy array
@@ -32,17 +33,11 @@ def __calc_sparse_shape(array: np.ndarray, chunksize: int, verbose: bool) -> tup
     :param verbose: whether to print progress statements
     :return: tuple of shape
     """
-    # At some point, try to njit and parallelise this
     data_shape = 0
     shape = array.shape
-    announce_progress('Identifying sparse shape...') if verbose else None
 
-    if (chunksize is None) or (type(array) is np.ndarray):
-        data_shape = np.count_nonzero(array)
-
-    else:
-        for i in tqdm(range(0, shape[0], chunksize)) if verbose else range(0, shape[0], chunksize):
-            data_shape += np.count_nonzero(array[i:i + chunksize])
+    for i in prange(shape[0]):
+        data_shape += np.count_nonzero(array[i])
 
     return (data_shape,)
 
@@ -86,7 +81,8 @@ def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize
     # Identify the relevant shapes of the dense and sparse arrays
     dense_shape = array.shape
     dense_dtype = array.dtype
-    nonzero_shape = __calc_sparse_shape(array, chunksize, verbose)
+    announce_progress('Identifying sparse shape...') if verbose else None
+    nonzero_shape = __calc_sparse_shape(array)
 
     # Create the sparse array binaries (memory-mapped)
     memmap_sparse_data = open_memmap(os.path.join(path, 'sparse_data.npy'),
@@ -116,7 +112,8 @@ def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize
     else:
         sparse_coords_dict = {}
         for chunk_idx in tqdm(range(0, dense_shape[0], chunksize)) if verbose else range(0, dense_shape[0], chunksize):
-            sparse_coords, sparse_values, sparse_coords_dict_iter = __convert_to_sparse_data(array[chunk_idx:chunk_idx + chunksize], chunk_idx)
+            sparse_coords, sparse_values, sparse_coords_dict_iter = __convert_to_sparse_data(
+                array[chunk_idx:chunk_idx + chunksize], chunk_idx)
 
             memmap_sparse_coords[sparse_index:sparse_index + sparse_coords.shape[0]] = sparse_coords
             memmap_sparse_data[sparse_index:sparse_index + sparse_coords.shape[0]] = sparse_values
