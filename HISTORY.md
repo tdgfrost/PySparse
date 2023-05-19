@@ -12,6 +12,7 @@ All notable changes to the `PySparse` package will be documented in this file.
 
 ### Changed
 - README tidied up a little.
+- Some of the core to_sparse functions are now jitted - this introduces a slight speed-up. Reading from slow I/O formats (.h5) still takes a long time to convert to sparse.
 
 ### Removed
 - find_indices now replaced with a static coords_dictionary.pkl file.

@@ -1,4 +1,7 @@
+from typing import Iterable
+
 import numpy as np
+from numpy import ndarray
 from numpy.lib.format import open_memmap
 import os
 from numba import njit, prange
@@ -41,7 +44,7 @@ def progress_bar(iteration, total_iterations):
     return
 
 
-def __calc_sparse_shape(array: np.ndarray, chunksize: int, verbose: bool) -> tuple:
+def __calc_sparse_shape(array: np.ndarray, chunksize: int, verbose: bool) -> int:
     """
     Calculate the shape of the (pending) sparse array
     :param array: dense numpy array
@@ -61,24 +64,24 @@ def __calc_sparse_shape(array: np.ndarray, chunksize: int, verbose: bool) -> tup
             progress_bar(i, shape[0]) if verbose else None
             data_shape += np.count_nonzero(array[i:i + chunksize])
 
-    return (data_shape,)
+    return data_shape
 
 
-def __convert_to_sparse_data(array_chunk: np.ndarray, iteration: int) -> (np.ndarray, np.ndarray):
+@njit
+def __convert_to_sparse_data(sparse_coords, sparse_values, iteration: int) -> (np.ndarray, np.ndarray):
     """
     Convert a chunk of a dense array to sparse data
-    :param array: chunk of dense array
-    :param dense_size: size of dense array
-    :param chunksize: number of rows of array to process at a time
-    :param memmap_sparse_coords: memory-mapped array to store sparse coordinates
-    :param memmap_sparse_data: memory-mapped array to store sparse data
+    :param sparse_coords: sparse coordinates
+    :param sparse_values: sparse values
+    :param iteration: iteration number
     :return: tuple of sparse coordinates and sparse values
     """
-    sparse_coords = np.nonzero(array_chunk)
-    sparse_values = array_chunk[sparse_coords]
     sparse_coords = list(sparse_coords)
     sparse_coords[0] += iteration
-    sparse_coords = np.stack(sparse_coords, axis=1)
+    sparse_coords_arr = np.empty((len(sparse_coords), sparse_coords[0].shape[0]), dtype=np.int64)
+    for row in range(len(sparse_coords)):
+        sparse_coords_arr[row] = sparse_coords[row]
+    sparse_coords = sparse_coords_arr.T
     sparse_coords_dict = __create_sparse_coords_dictionary(sparse_coords)
 
     return sparse_coords, sparse_values, sparse_coords_dict
@@ -138,7 +141,9 @@ def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize
     sparse_index = 0
 
     if (chunksize is None) or (type(array) is np.ndarray):
-        sparse_coords, sparse_values, sparse_coords_dict = __convert_to_sparse_data(array, 0)
+        sparse_coords = np.nonzero(array)
+        sparse_values = array[sparse_coords]
+        sparse_coords, sparse_values, sparse_coords_dict = __convert_to_sparse_data(sparse_coords, sparse_values, 0)
 
         memmap_sparse_coords[:] = sparse_coords
         memmap_sparse_data[:] = sparse_values
@@ -147,7 +152,10 @@ def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize
         sparse_coords_dict = {}
         for chunk_idx in range(0, dense_shape[0], chunksize):
             progress_bar(chunk_idx, dense_shape[0]) if verbose else None
-            sparse_coords, sparse_values, sparse_coords_dict_temp = __convert_to_sparse_data(array[chunk_idx:chunk_idx + chunksize], chunk_idx)
+            array_chunk = array[chunk_idx:chunk_idx + chunksize]
+            sparse_coords = np.nonzero(array_chunk)
+            sparse_values = array_chunk[sparse_coords]
+            sparse_coords, sparse_values, sparse_coords_dict_temp = __convert_to_sparse_data(sparse_coords, sparse_values, chunk_idx)
 
             memmap_sparse_coords[sparse_index:sparse_index + sparse_coords.shape[0]] = sparse_coords
             memmap_sparse_data[sparse_index:sparse_index + sparse_coords.shape[0]] = sparse_values
@@ -156,12 +164,12 @@ def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize
             sparse_index += sparse_coords.shape[0]
 
     with open(os.path.join(path, 'sparse_coords_dict.pkl'), 'wb') as f:
-        pickle.dump(dict(sparse_coords_dict), f)
+        pickle.dump(sparse_coords_dict, f)
 
     return
 
 
-def to_sparse(array: np.ndarray or np.memmap, savepath: 'str', chunksize=100000, verbose=True) -> None:
+def to_sparse(array: np.ndarray or np.memmap, savepath: 'str', chunksize=1000, verbose=True) -> None:
     """
     Convert and write a dense array to a sparse array
     :param array: numpy array to be converted
