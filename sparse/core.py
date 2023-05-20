@@ -1,7 +1,4 @@
-from typing import Iterable
-
 import numpy as np
-from numpy import ndarray
 from numpy.lib.format import open_memmap
 import os
 from numba import njit, prange

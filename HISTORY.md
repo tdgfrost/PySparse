@@ -4,10 +4,10 @@ All notable changes to the `PySparse` package will be documented in this file.
 
 ## [Unreleased]
 
-## [0.2.0] - 2023-05-20
+## [1.0.0] - 2023-05-20
 
 ### Added
-- Additional "coords_dictionary" file included, which replaces the previous find_indices function and introduces significant loading speed-up of 2-3x. This version is not backwards compatible with arrays encoded using v0.1.*
+- Additional "coords_dictionary" file included, which replaces the previous find_indices function and introduces significant loading speed-up of 2-3x. This version is not backwards compatible with arrays encoded using v0.*
 
 ### Fixed
 - N/A
@@ -19,6 +19,7 @@ All notable changes to the `PySparse` package will be documented in this file.
 
 ### Removed
 - find_indices now replaced with a static coords_dictionary.pkl file.
+
 
 ## [0.1.5] - 2023-05-18
 
