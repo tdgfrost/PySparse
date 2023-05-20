@@ -4,15 +4,18 @@ All notable changes to the `PySparse` package will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.0] - 2023-05-20
+
 ### Added
-- Additional "coords_dictionary" file included, which replaces the previous find_indices function and introduces significant speed-up.
+- Additional "coords_dictionary" file included, which replaces the previous find_indices function and introduces significant loading speed-up of 2-3x. This version is not backwards compatible with arrays encoded using v0.1.*
 
 ### Fixed
 - N/A
 
 ### Changed
 - README tidied up a little.
-- Some of the core to_sparse functions are now jitted - this introduces a slight speed-up. Reading from slow I/O formats (.h5) still takes a long time to convert to sparse.
+- One of the core to_sparse functions are now jitted - this introduces a slight speed-up. Reading from slow I/O formats (.h5) still takes a long time to convert to sparse.
+- tqdm now replaced with an in-house progress bar to reduce dependencies
 
 ### Removed
 - find_indices now replaced with a static coords_dictionary.pkl file.

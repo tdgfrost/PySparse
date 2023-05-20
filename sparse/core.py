@@ -68,12 +68,13 @@ def __calc_sparse_shape(array: np.ndarray, chunksize: int, verbose: bool) -> int
 
 
 @njit
-def __convert_to_sparse_data(sparse_coords, sparse_values, iteration: int) -> (np.ndarray, np.ndarray):
+def __convert_to_sparse_data(sparse_coords, sparse_values, iteration: int, chunksize, sparse_coords_idx_baseline) -> (np.ndarray, np.ndarray):
     """
     Convert a chunk of a dense array to sparse data
     :param sparse_coords: sparse coordinates
     :param sparse_values: sparse values
     :param iteration: iteration number
+    :param prev_sparse_coords_max: maximum idx of the previous sparse coordinates
     :return: tuple of sparse coordinates and sparse values
     """
     sparse_coords = list(sparse_coords)
@@ -82,13 +83,14 @@ def __convert_to_sparse_data(sparse_coords, sparse_values, iteration: int) -> (n
     for row in range(len(sparse_coords)):
         sparse_coords_arr[row] = sparse_coords[row]
     sparse_coords = sparse_coords_arr.T
-    sparse_coords_dict = __create_sparse_coords_dictionary(sparse_coords)
+    sparse_coords_dict = __create_sparse_coords_dictionary(sparse_coords, iteration, chunksize,
+                                                           sparse_coords_idx_baseline)
 
     return sparse_coords, sparse_values, sparse_coords_dict
 
 
 @njit(parallel=True)
-def __create_sparse_coords_dictionary(sparse_coords):
+def __create_sparse_coords_dictionary(sparse_coords, iteration, chunksize, sparse_coords_idx_baseline):
     """
     Convert a chunk of a dense array to sparse data
     :param sparse_coords: sparse coordinates
@@ -96,13 +98,13 @@ def __create_sparse_coords_dictionary(sparse_coords):
     """
     min_value = sparse_coords[:, 0].min()
     max_value = sparse_coords[:, 0].max()
-    sparse_coords_dict = {i: (-1, -1) for i in range(min_value, max_value+1)}
+    sparse_coords_dict = {i: (-1, -1) for i in range(iteration, iteration + chunksize)}
 
     for dense_row in prange(min_value, max_value + 1):
         sparse_to_dense_coords = np.where(sparse_coords[:, 0] == dense_row)[0]
         if np.any(sparse_to_dense_coords):
-            sparse_coords_dict[dense_row] = (np.where(sparse_coords[:, 0] == dense_row)[0].min(),
-                                             np.where(sparse_coords[:, 0] == dense_row)[0].max())
+            sparse_coords_dict[dense_row] = (sparse_to_dense_coords.min() + sparse_coords_idx_baseline,
+                                             sparse_to_dense_coords.max() + sparse_coords_idx_baseline)
 
     return sparse_coords_dict
 
@@ -141,27 +143,33 @@ def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize
     sparse_index = 0
 
     if (chunksize is None) or (type(array) is np.ndarray):
-        sparse_coords = np.nonzero(array)
+        # Use of the bool dtype accelerates this step
+        sparse_coords = array.astype(bool).nonzero()
         sparse_values = array[sparse_coords]
-        sparse_coords, sparse_values, sparse_coords_dict = __convert_to_sparse_data(sparse_coords, sparse_values, 0)
+        sparse_coords, sparse_values, sparse_coords_dict = __convert_to_sparse_data(sparse_coords, sparse_values, 0, 0)
 
         memmap_sparse_coords[:] = sparse_coords
         memmap_sparse_data[:] = sparse_values
 
     else:
         sparse_coords_dict = {}
+        sparse_coords_idx_baseline = 0
         for chunk_idx in range(0, dense_shape[0], chunksize):
             progress_bar(chunk_idx, dense_shape[0]) if verbose else None
             array_chunk = array[chunk_idx:chunk_idx + chunksize]
-            sparse_coords = np.nonzero(array_chunk)
+            # Use of the bool dtype accelerates this step
+            sparse_coords = array_chunk.astype(bool).nonzero()
             sparse_values = array_chunk[sparse_coords]
-            sparse_coords, sparse_values, sparse_coords_dict_temp = __convert_to_sparse_data(sparse_coords, sparse_values, chunk_idx)
+            sparse_coords, sparse_values, sparse_coords_dict_temp = __convert_to_sparse_data(sparse_coords, sparse_values,
+                                                                                             chunk_idx, chunksize,
+                                                                                             sparse_coords_idx_baseline)
 
             memmap_sparse_coords[sparse_index:sparse_index + sparse_coords.shape[0]] = sparse_coords
             memmap_sparse_data[sparse_index:sparse_index + sparse_coords.shape[0]] = sparse_values
             sparse_coords_dict.update(sparse_coords_dict_temp)
 
             sparse_index += sparse_coords.shape[0]
+            sparse_coords_idx_baseline = sparse_coords_dict[min(chunk_idx + chunksize - 1, dense_shape[0]-1)][1] + 1
 
     with open(os.path.join(path, 'sparse_coords_dict.pkl'), 'wb') as f:
         pickle.dump(sparse_coords_dict, f)

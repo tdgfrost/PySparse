@@ -8,9 +8,13 @@ For machine-learning purposes, a NumPy array might be stored in one of two forma
 
 Both of the above can be accessed in a memory-mapped fashion (to avoid OOM errors), but both require concessions in the form of either size or speed.
 
-PySparse tries to find a middle ground. The package takes a given NumPy array, and encodes it into two (smaller) arrays - a 1D array containing all non-zero values, and a 2D array containing the mapped coordinates for these values in the original 'dense' array.
+PySparse tries to find a middle ground. The package takes a given NumPy array, and encodes it into four files:
+- a 1D array containing all non-zero values
+- a 2D array containing the mapped coordinates for these values in the original 'dense' array
+- a 1D array containing the shape of the original dense array
+- and a pickled dictionary mapping dense-to-sparse row coordinates, new to v1.
 
-These mapped arrays can then be re-loaded into a SparseArray class, from which indexing can be performed as if you were operating on the original dense array. PySparse will decode the desired indices on-the-fly using memory-mapping of the encoded coordinates, and provide the desired subarray in-memory.
+These arrays can then be re-loaded into a SparseArray class, from which indexing can be performed as if you were operating on the original dense array. PySparse will decode the desired indices on-the-fly using memory-mapping of the encoded coordinates, and provide the desired subarray in-memory.
 
 # Example Code
 
@@ -46,7 +50,7 @@ Writing sparse arrays...
 
 > print(os.listdirs(savepath))
 
-['dense_shape.npy', 'sparse_data.npy', 'sparse_coords.npy']
+['dense_shape.npy', 'sparse_coords_dict.pkl', 'sparse_coords.npy', 'sparse_data.npy']
 
 ```
 **Decoding an Array**
@@ -56,6 +60,7 @@ Writing sparse arrays...
     Load a (memory-mapped) sparse array from disk
     :param data_path: path to sparse data array OR parent directory containing 'sparse_data.npy', 'sparse_coords.npy', and 'dense_shape.npy' arrays
     :param coords_path: (optional) path to sparse coordinates array
+    :param coords_dict_path: (optional) path to dictionary mapping sparse to dense row coordinates
     :param shape: (optional) shape of the dense array, as either tuple or path to numpy array containing shape
     :return: SparseArray object
 
@@ -79,17 +84,17 @@ Sample data is a sparse array of size (1102729, 288, 63).
 **Relative Sizes**
 - .npy binary = 80GB
 - HDF5 with maximal gzip compression = 1.79GB
-- SparseArray directory = 11.76GB
+- SparseArray directory = 11.77GB
 
 **Loading first 10,000 rows**
 - .npy binary (memory-mapped) = 39.3 µs (757 ns with cache)
 - HDF5 = 957 ms (898 ms with cache)
-- SparseArray = 626 ms (387 ms with cache)
+- SparseArray = 445 ms (402 ms with cache)
 
 **Loading random 10,000 rows**
 - .npy binary (memory-mapped) = 4.24 seconds (88 ms with cache)
 - HDF5 = 32 seconds (31 seconds with cache)
-- SparseArray = 6.52 seconds (374 ms with cache)
+- SparseArray = 2.28 seconds (320 ms with cache)
 
 Of course, there are so many caveats to this (sparsity of data, shape of data, computational power available, etc), so you'll just have to try it yourself to see whether it works for you.
 

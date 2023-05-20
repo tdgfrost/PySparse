@@ -10,7 +10,7 @@ def load_sparse(data_path: str, coords_path=None, coords_dict_path = None, shape
     Load a (memory-mapped) sparse array from disk
     :param data_path: path to sparse data array OR parent directory containing 'sparse_data.npy', 'sparse_coords.npy', and 'dense_shape.npy' arrays
     :param coords_path: (optional) path to sparse coordinates array
-    :param coords_dict_path: (optional) path to dictionary mapping sparse to dense row coordinates (only)
+    :param coords_dict_path: (optional) path to dictionary mapping sparse to dense row coordinates
     :param shape: (optional) shape of the dense array, as either tuple or path to numpy array containing shape
     :return: SparseArray object
     """
@@ -127,6 +127,7 @@ class SparseArray:
         find_coords, coords_present = search_function[type(row_idx)](self.coords_dict, row_idx)
 
         find_coords = np.concatenate(find_coords)
+        find_coords = find_coords[find_coords >= 0]
 
         # Assuming the row indices have non-zero data...
         if coords_present:
@@ -173,10 +174,12 @@ class SparseArray:
 
         return find_coords, coords_present
 
+    """
+        @njit(types.Tuple((types.List(types.Array(types.int64, 1, 'C')), types.boolean))(types.DictType(types.int64, types.UniTuple(types.int64, count=2)),
+                                                                                         types.Array(types.int64, 1, 'A')),
+              parallel=True)
+    """
     @staticmethod
-    @njit(types.Tuple((types.List(types.Array(types.int64, 1, 'C')), types.boolean))(types.DictType(types.int64, types.UniTuple(types.int64, count=2)),
-                                                                                     types.Array(types.int64, 1, 'A')),
-          parallel=True)
     def __find_rows_ndarray(coords_dict, row_idx: np.ndarray) -> tuple[list[ndarray], bool]:
         """
         Efficiently search the coordinates to find the indices that match the given row indices
