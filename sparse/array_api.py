@@ -38,8 +38,10 @@ class SparseArray:
 
         if shape is tuple:
             self.dense_shape = shape
+            self.shape = self.dense_shape
         else:
             self.dense_shape = tuple(np.load(shape))
+            self.shape = self.dense_shape
 
     def __getitem__(self, items):
         """"
@@ -128,6 +130,7 @@ class SparseArray:
 
         find_coords = np.concatenate(find_coords)
         find_coords = find_coords[find_coords >= 0]
+        find_coords = np.sort(find_coords)
 
         # Assuming the row indices have non-zero data...
         if coords_present:
@@ -136,9 +139,9 @@ class SparseArray:
 
             # Some slightly complex indexing to identify the non-zero cells of the (indexed) target array
             nonzero_row_indices_unique = np.where(np.isin(row_idx, np.unique(target_coords[:, 0])))[0]
-            nonzero_row_indices_unique_idx = np.unique(target_coords[:, 0], return_index=True)[1]
+            nonzero_row_indices_unique_idx = np.where(np.isin(np.unique(target_coords[:, 0]), row_idx))[0]
 
-            target_coords[:, 0] = -1
+            target_coords[:, 0] = 0
             target_coords[nonzero_row_indices_unique_idx, 0] = nonzero_row_indices_unique
 
             target_coords[:, 0] = np.maximum.accumulate(target_coords[:, 0], axis=0)
@@ -217,4 +220,7 @@ class SparseArray:
         target_data = target_data[tuple(items)]
 
         return target_data
+
+    def __len__(self):
+        return self.shape[0]
 

@@ -58,7 +58,7 @@ Writing sparse arrays...
 > print(load_sparse.__doc__)
 
     Load a (memory-mapped) sparse array from disk
-    :param data_path: path to sparse data array OR parent directory containing 'sparse_data.npy', 'sparse_coords.npy', and 'dense_shape.npy' arrays
+    :param data_path: path to sparse data array OR parent directory containing 'sparse_data.npy', 'sparse_coords.npy', 'dense_shape.npy', and 'sparse_coords_dict.pkl' files
     :param coords_path: (optional) path to sparse coordinates array
     :param coords_dict_path: (optional) path to dictionary mapping sparse to dense row coordinates
     :param shape: (optional) shape of the dense array, as either tuple or path to numpy array containing shape

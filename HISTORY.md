@@ -4,6 +4,20 @@ All notable changes to the `PySparse` package will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.2]
+
+### Added
+- Added .shape attribute alongside .dense_shape and .coords_shape
+
+### Fixed
+- Fixed bug with indexing 1D data
+- README updated appropriately
+
+## [1.0.1] - 2023-05-20
+
+### Fixed
+- Small dependencies bug, now resolved
+
 ## [1.0.0] - 2023-05-20
 
 ### Added
