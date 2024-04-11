@@ -83,32 +83,19 @@ class SparseArray:
             return target_data.reshape(shape)
 
         elif isinstance(items, tuple):
-            items = list(items)
             for idx, item in enumerate(items):
                 if not isinstance(item, (int, slice, np.ndarray, type(Ellipsis), type(None))):
                     raise TypeError(
                         'indices must be integers, slices, np.ndarray, Ellipsis, or NoneType - not {}'.format(
                             type(item)))
 
-            if isinstance(items[0], slice):
-                items[0] = np.arange(*items[0].indices(self.dense_shape[0]))
-                return self.__get_item(items)
+            new_items = list(items)
+            if isinstance(items[0], int):
+                del new_items[0]
+            else:
+                new_items[0] = slice(None, None, None)
 
-            elif isinstance(items[0], np.ndarray):
-                if items[0].dtype == bool:
-                    if len(items[0]) != self.dense_shape[0]:
-                        raise ValueError(
-                            'Boolean index shape mismatch: {} vs {}'.format(len(items[0]), self.dense_shape[0]))
-                    else:
-                        items[0] = np.where(items[0])[0]
-                        return self.__get_item(items)
-
-            elif (items[0] is Ellipsis) or (items[0] is None):
-                target_data = np.zeros((1,) + self.dense_shape[1:])
-                target_data[tuple(self.coords.T)] = self.data
-                return target_data[tuple(items)]
-
-            return self.__get_item(items)
+            return self.__getitem__(items[0])[tuple(new_items)]
 
         else:
             raise TypeError(
@@ -138,11 +125,11 @@ class SparseArray:
             target_coords = self.coords[find_coords]
 
             # Some slightly complex indexing to identify the non-zero cells of the (indexed) target array
-            nonzero_row_indices_unique = np.where(np.isin(row_idx, np.unique(target_coords[:, 0])))[0]
-            nonzero_row_indices_unique_idx = np.where(np.isin(np.unique(target_coords[:, 0]), row_idx))[0]
+            nonzero_idxs_in_row_idx = np.where(np.isin(row_idx, np.unique(target_coords[:, 0])))[0]
+            location_of_each_new_idx_in_target_coords = np.unique(target_coords[:, 0], return_index=True)[1]
 
             target_coords[:, 0] = 0
-            target_coords[nonzero_row_indices_unique_idx, 0] = nonzero_row_indices_unique
+            target_coords[location_of_each_new_idx_in_target_coords, 0] = nonzero_idxs_in_row_idx
 
             target_coords[:, 0] = np.maximum.accumulate(target_coords[:, 0], axis=0)
 
@@ -152,9 +139,13 @@ class SparseArray:
 
             # Fill the dense array with the non-zero data at the target coordinates
             target_data[tuple(target_coords.T)] = self.data[find_coords]
+
+            # If only one row index was given, reduce the dimensionality
+            if isinstance(row_idx, int):
+                target_data = target_data[0]
         else:
             # If the row indices have no non-zero data, return an array of zeros
-            target_data = np.zeros((1,) + self.dense_shape[1:], dtype=self.data_dtype) if isinstance(row_idx, int) else np.zeros(
+            target_data = np.zeros(self.dense_shape[1:], dtype=self.data_dtype) if isinstance(row_idx, int) else np.zeros(
                 (len(row_idx),) + self.dense_shape[1:], dtype=self.data_dtype)
 
         return target_data
@@ -203,23 +194,6 @@ class SparseArray:
         coords_present = bool(coords_present)
 
         return find_coords, coords_present
-
-    def __get_item(self, items) -> np.ndarray:
-        """
-        Get the values of the dense array at the given indices
-        :param items: tuple of indices
-        :return: dense numpy array values at the given indices
-        """
-
-        # Start by getting the values of the dense array at the given row indices,
-        # with the dense array fully in memory
-        target_data = self.__get_row(items[0])
-
-        # Then index the dense array with the remaining indices as usual
-        items[0] = Ellipsis
-        target_data = target_data[tuple(items)]
-
-        return target_data
 
     def __len__(self):
         return self.shape[0]

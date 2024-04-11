@@ -9,7 +9,7 @@ with open('HISTORY.md') as history_file:
 
 setup_args = dict(
     name='pysparse-array',
-    version='1.0.2',
+    version='1.0.9',
     description='Package to encode and decode large OOM numpy arrays as Sparse binaries',
     long_description_content_type="text/markdown",
     long_description=README + '\n\n' + HISTORY,

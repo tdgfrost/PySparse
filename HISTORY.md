@@ -4,7 +4,47 @@ All notable changes to the `PySparse` package will be documented in this file.
 
 ## [Unreleased]
 
-## [1.0.2]
+## [1.0.9] - 2023-12-15
+
+### Fixed
+- Fixed bug - chunk size being compared to a tuple instead of an integer
+
+## [1.0.8] - 2023-07-24
+
+### Fixed
+- Fixed problem with small arrays with large chunksizes
+
+## [1.0.7] - 2023-05-23
+
+### Fixed
+- Fixed ongoing multi-index issues
+
+## [1.0.6] - 2023-05-23
+
+### Fixed
+- Accidentally left njit commented out!
+
+### Changed
+- Progress bar fixed to always finish with 100%
+
+## [1.0.5] - 2023-05-22
+
+### Fixed
+- Fixed single-index bug at axis=0
+
+## [1.0.4] - 2023-05-22
+
+### Fixed
+- Fixed multi-indexing bug
+
+## [1.0.3] - 2023-05-21
+
+### Fixed
+- Fixed further bug around multi-index slicing, and in doing so, tidied up some unnecessary Class code
+- Fixed bug whereby the first value was being lost when converting to_sparse
+- Fixed bug whereby certain values were being lost in to_sparse due to a dictionary error
+
+## [1.0.2] - 2023-05-20
 
 ### Added
 - Added .shape attribute alongside .dense_shape and .coords_shape
