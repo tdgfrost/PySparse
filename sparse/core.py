@@ -1,8 +1,7 @@
 import numpy as np
 from numpy.lib.format import open_memmap
 import os
-from numba import njit, prange
-import pickle
+from numba import prange
 
 """
 ============================================================
@@ -41,12 +40,28 @@ def progress_bar(iteration, total_iterations):
     return
 
 
-def __calc_sparse_shape(array: np.ndarray, chunksize: int, sparse_value, verbose: bool) -> int:
+def find_smallest_dtype(max_value: int) -> np.dtype:
+    """
+    Find the smallest numpy dtype that can hold the given value
+    :param max_value: maximum value to be held by the dtype
+    :return: numpy dtype
+    """
+    if max_value <= np.iinfo(np.uint8).max:
+        return np.uint8
+    elif max_value <= np.iinfo(np.uint16).max:
+        return np.uint16
+    elif max_value <= np.iinfo(np.uint32).max:
+        return np.uint32
+    else:
+        return np.uint64
+
+
+def __calc_sparse_shape(array: np.ndarray, chunksize: int, sparse_ref_value, verbose: bool) -> int:
     """
     Calculate the shape of the (pending) sparse array
     :param array: dense numpy array
     :param chunksize: chunksize to use for calculation - if None, will use the whole array
-    :param sparse_value: value to be considered as sparse (default is 0)
+    :param sparse_ref_value: value to be considered as sparse (default is 0)
     :param verbose: whether to print progress statements
     :return: tuple of shape
     """
@@ -56,67 +71,25 @@ def __calc_sparse_shape(array: np.ndarray, chunksize: int, sparse_value, verbose
 
     announce_progress('Counting non-sparse values...')
     if chunksize is None:
-        data_shape = np.sum(array[:] != sparse_value) if not np.isnan(sparse_value) else np.sum(~np.isnan(array))
+        data_shape = np.sum(array[:] != sparse_ref_value) if not np.isnan(sparse_ref_value) else np.sum(~np.isnan(array))
 
     else:
         for i in range(0, shape[0], chunksize):
             progress_bar(i, shape[0] // chunksize * chunksize) if verbose else None
-            data_shape += np.sum(array[i:i + chunksize] != sparse_value) if not np.isnan(sparse_value) \
+            data_shape += np.sum(array[i:i + chunksize] != sparse_ref_value) if not np.isnan(sparse_ref_value) \
                 else np.sum(~np.isnan(array[i:i + chunksize]))
 
     return data_shape
 
 
-@njit
-def __convert_to_sparse_data(sparse_coords, sparse_values, iteration: int, chunksize, sparse_idx) -> (np.ndarray, np.ndarray):
-    """
-    Convert a chunk of a dense array to sparse data
-    :param sparse_coords: sparse coordinates
-    :param sparse_values: sparse values
-    :param iteration: iteration number
-    :param prev_sparse_coords_max: maximum idx of the previous sparse coordinates
-    :return: tuple of sparse coordinates and sparse values
-    """
-    sparse_coords = list(sparse_coords)
-    sparse_coords[0] += iteration
-    sparse_coords_arr = np.empty((len(sparse_coords), sparse_coords[0].shape[0]), dtype=np.int64)
-    for row in range(len(sparse_coords)):
-        sparse_coords_arr[row] = sparse_coords[row]
-    sparse_coords = sparse_coords_arr.T
-    sparse_coords_dict = __create_sparse_coords_dictionary(sparse_coords, iteration, chunksize,
-                                                           sparse_idx)
-
-    return sparse_coords, sparse_values, sparse_coords_dict
-
-
-@njit(parallel=True)
-def __create_sparse_coords_dictionary(sparse_coords, iteration, chunksize, sparse_idx):
-    """
-    Convert a chunk of a dense array to sparse data
-    :param sparse_coords: sparse coordinates
-    :return: dictionary mapping dense rows to sparse coordinates
-    """
-    min_value = sparse_coords[:, 0].min()
-    max_value = sparse_coords[:, 0].max()
-    sparse_coords_dict = {i: (-1, -1) for i in range(iteration, iteration + chunksize)}
-
-    for dense_row in prange(min_value, max_value + 1):
-        sparse_to_dense_coords = np.where(sparse_coords[:, 0] == dense_row)[0]
-        if sparse_to_dense_coords.shape[0] > 0:
-            sparse_coords_dict[dense_row] = (sparse_to_dense_coords.min() + sparse_idx,
-                                             sparse_to_dense_coords.max() + sparse_idx)
-
-    return sparse_coords_dict
-
-
 def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize: int,
-                          sparse_val, verbose: bool) -> None:
+                          sparse_ref_value, verbose: bool) -> None:
     """
     Simultaneously convert and write a dense array to sparse arrays
     :param array: dense numpy array to be converted
     :param path: path to write sparse arrays to
     :param chunksize: chunksize to use for conversion - if None, will convert the whole array in memory
-    :param sparse_val: value to be considered as sparse (default is 0)
+    :param sparse_ref_value: value to be considered as sparse (default is 0)
     :param verbose: whether to print progress statements
     :return:
     """
@@ -127,73 +100,111 @@ def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize
     announce_progress('Identifying sparse shape...') if verbose else None
     if chunksize > dense_shape[0]:
         chunksize = dense_shape[0]
-    nonsparse_shape = __calc_sparse_shape(array, chunksize, sparse_val, verbose)
+    nonsparse_shape = __calc_sparse_shape(array, chunksize, sparse_ref_value, verbose)
 
+    """
+    Okay, idea:
+    Could stick with CSR, but to adapt matrices more than 2D, we simply take all the columns+ and flatten
+    them using np ravel and unravel multi index.
+    So a 3D array of shape (a x b x c) becomes (a x d), where d is a flattened version of b and c.
+    This remains optimised if the row is the primary unit of searching, which it will be here!
+    
+    Note for later (may or may not be helpful).
+    Let's say you've compressed the rows AND the columns.
+    If you search for row 1000, that's easy to do.
+    What about decoding subequent dimensions?
+    Steps, using the example `query = [:, :, 10:]`, of shape `dense_shape = (S x M x N)`
+    1) Generate an index
+    > index = np.indices(dense_shape)
+    
+    2) Convert this to a flattened query using ravel_multi_index:
+    > flattened_index = np.ravel_multi_index(index[query], dims=dense_shape)
+    
+    3) Use this to find the appropriate items from the compressed column
+    """
     # Create the sparse array binaries (memory-mapped)
     memmap_sparse_data = open_memmap(os.path.join(path, 'sparse_data.npy'),
                                      dtype=dense_dtype,
                                      mode='w+',
                                      shape=(nonsparse_shape,))
 
+    memmap_sparse_rows = open_memmap(os.path.join(path, 'sparse_rows.npy'),
+                                     dtype=find_smallest_dtype(nonsparse_shape),
+                                     mode='w+',
+                                     shape=(dense_shape[0],))
+
     memmap_sparse_coords = open_memmap(os.path.join(path, 'sparse_coords.npy'),
-                                       dtype=np.int32,
+                                       dtype=find_smallest_dtype(np.prod(dense_shape[1:])),
                                        mode='w+',
-                                       shape=(nonsparse_shape, len(dense_shape)))
+                                       shape=(nonsparse_shape,))
 
     np.save(os.path.join(path, 'dense_shape.npy'), dense_shape)
 
     # Convert the dense array to sparse arrays
     announce_progress('Writing sparse arrays...') if verbose else None
-    sparse_index = 0
 
     if chunksize is None:
-        sparse_coords = np.where(array[:] != sparse_val) if not np.isnan(sparse_val) \
+        sparse_values_idx = np.where(array[:] != sparse_ref_value) if not np.isnan(sparse_ref_value) \
             else np.where(~np.isnan(array[:]))
-        sparse_values = array[:][sparse_coords]
-        sparse_coords, sparse_values, sparse_coords_dict = __convert_to_sparse_data(sparse_coords, sparse_values, 0, 0)
 
-        memmap_sparse_coords[:] = sparse_coords
-        memmap_sparse_data[:] = sparse_values
+        # code for the rows
+        compressed_sparse_rows = np.cumsum(np.bincount(sparse_values_idx[0])[:-1])
+        compressed_sparse_rows = np.insert(compressed_sparse_rows, 0, 0)
+        memmap_sparse_rows[:] = compressed_sparse_rows
+
+        # code for the cols
+        sparse_coords_flattened = np.ravel_multi_index(sparse_values_idx[1:], dims=(dense_shape[1:]))
+        memmap_sparse_coords[:] = sparse_coords_flattened
 
     else:
-        sparse_coords_dict = {}
-        for chunk_idx in range(0, dense_shape[0], chunksize):
-            progress_bar(chunk_idx, dense_shape[0] // chunksize * chunksize) if verbose else None
-            array_chunk = array[chunk_idx:chunk_idx + chunksize]
-            # Use of the bool dtype accelerates this step
-            sparse_coords = array_chunk.astype(bool).nonzero()
-            sparse_values = array_chunk[sparse_coords]
-            sparse_coords, sparse_values, sparse_coords_dict_temp = __convert_to_sparse_data(sparse_coords, sparse_values,
-                                                                                             chunk_idx, chunksize,
-                                                                                             sparse_index)
+        sparse_save_idx = 0
+        last_sparse_row_max = 0
+        for dense_chunk_idx in range(0, dense_shape[0], chunksize):
+            progress_bar(dense_chunk_idx, dense_shape[0] // chunksize * chunksize) if verbose else None
+            next_dense_chunk_idx = dense_chunk_idx + chunksize
 
-            memmap_sparse_coords[sparse_index:sparse_index + sparse_coords.shape[0]] = sparse_coords
-            memmap_sparse_data[sparse_index:sparse_index + sparse_coords.shape[0]] = sparse_values
-            sparse_coords_dict.update(sparse_coords_dict_temp)
+            # get array chunk
+            array_chunk = array[dense_chunk_idx:next_dense_chunk_idx]
 
-            sparse_index += sparse_coords.shape[0]
+            # get index
+            sparse_values_idx = np.where(array_chunk != sparse_ref_value) if not np.isnan(sparse_ref_value) \
+                else np.where(~np.isnan(array_chunk))
 
-    with open(os.path.join(path, 'sparse_coords_dict.pkl'), 'wb') as f:
-        pickle.dump(sparse_coords_dict, f)
+            # get values
+            sparse_values = array_chunk[sparse_values_idx]
+            next_sparse_save_idx = sparse_save_idx + sparse_values.size
+            memmap_sparse_data[sparse_save_idx:next_sparse_save_idx] = sparse_values
+
+            # code for the rows
+            sparse_rows = np.cumsum(np.bincount(sparse_values_idx[0]))
+            sparse_rows = np.insert(sparse_rows, 0, 0) + last_sparse_row_max
+            sparse_rows, last_sparse_row_max = sparse_rows[:-1], sparse_rows[-1]
+            memmap_sparse_rows[dense_chunk_idx:next_dense_chunk_idx] = sparse_rows
+
+            # code for the cols
+            sparse_coords_flattened = np.ravel_multi_index(sparse_values_idx[1:], dims=(dense_shape[1:]))
+            memmap_sparse_coords[sparse_save_idx:next_sparse_save_idx] = sparse_coords_flattened
+
+            sparse_save_idx = next_sparse_save_idx
 
     return
 
 
-def to_sparse(array: np.ndarray or np.memmap, savepath: 'str', chunksize=1000, sparse_value=0, verbose=True) -> None:
+def to_sparse(array: np.ndarray or np.memmap, savepath: 'str', chunksize=1000, sparse_reference_value=0, verbose=True) -> None:
     """
     Convert and write a dense array to a sparse array
     :param array: numpy array to be converted
     :param savepath: filepath to write sparse array to
     :param chunksize: number of memmap rows to process at a time if array is np.memmap - if None, will convert the whole array in memory
-    :param sparse_value: value to be considered as sparse (default is 0)
+    :param sparse_reference_value: value to be considered as sparse (default is 0)
     :param verbose: whether to print progress statements
     :return: None
     """
     if not os.path.isdir(savepath):
         os.makedirs(savepath)
 
-    if not isinstance(sparse_value, int) and not isinstance(sparse_value, float) and not np.isnan(sparse_value):
+    if not isinstance(sparse_reference_value, int) and not isinstance(sparse_reference_value, float) and not np.isnan(sparse_reference_value):
         raise ValueError('Sparse value must be an integer, float, or NaN')
 
-    __write_sparse_arrays(array, savepath, chunksize, sparse_value, verbose)
+    __write_sparse_arrays(array, savepath, chunksize, sparse_reference_value, verbose)
     return

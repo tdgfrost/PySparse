@@ -5,14 +5,14 @@ import os
 from numpy import ndarray
 
 
-def load_sparse(data_path: str, coords_path=None, coords_dict_path=None, shape=None, sparse_value=0):
+def load_sparse(data_path: str, coords_path=None, coords_dict_path=None, shape=None, sparse_reference_value=0):
     """
     Load a (memory-mapped) sparse array from disk
     :param data_path: path to sparse data array OR parent directory containing 'sparse_data.npy', 'sparse_coords.npy', and 'dense_shape.npy' arrays
     :param coords_path: (optional) path to sparse coordinates array
     :param coords_dict_path: (optional) path to dictionary mapping sparse to dense row coordinates
     :param shape: (optional) shape of the dense array, as either tuple or path to numpy array containing shape
-    :param sparse_value: (optional) value to be treated as sparse (default: 0)
+    :param sparse_reference_value: (optional) value to be treated as sparse (default: 0)
     :return: SparseArray object
     """
     if os.path.isdir(data_path):
@@ -21,7 +21,7 @@ def load_sparse(data_path: str, coords_path=None, coords_dict_path=None, shape=N
         shape = os.path.join(data_path, 'dense_shape.npy')
         data_path = os.path.join(data_path, 'sparse_data.npy')
 
-    return SparseArray(data_path, coords_path, coords_dict_path, shape, sparse_value, mode='r')
+    return SparseArray(data_path, coords_path, coords_dict_path, shape, sparse_reference_value, mode='r')
 
 
 class SparseArray:
