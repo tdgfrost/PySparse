@@ -5,16 +5,5 @@ dist/
 pysparse_array.egg-info/
 pyproject.toml
 .github/workflows/publish-to-pypi.yml
-sparse/__pycache__/core.find_indices-149.py310.nbi
-sparse/__pycache__/core.find_indices-149.py310.1.nbc
-sparse/__pycache__/core.find_indices-133.py310.nbi
-sparse/__pycache__/core.find_indices-133.py310.1.nbc
-sparse/__pycache__/core.find_indices-132.py310.nbi
-sparse/__pycache__/core.find_indices-132.py310.1.nbc
-sparse/__pycache__/core.cpython-310.pyc
-sparse/__pycache__/array_api.cpython-310.pyc
-sparse/__pycache__/__init__.cpython-310.pyc
-test.py
-test.py
-test.py
+sparse/__pycache__
 test.py

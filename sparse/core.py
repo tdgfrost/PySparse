@@ -41,11 +41,12 @@ def progress_bar(iteration, total_iterations):
     return
 
 
-def __calc_sparse_shape(array: np.ndarray, chunksize: int, verbose: bool) -> int:
+def __calc_sparse_shape(array: np.ndarray, chunksize: int, sparse_value, verbose: bool) -> int:
     """
     Calculate the shape of the (pending) sparse array
     :param array: dense numpy array
     :param chunksize: chunksize to use for calculation - if None, will use the whole array
+    :param sparse_value: value to be considered as sparse (default is 0)
     :param verbose: whether to print progress statements
     :return: tuple of shape
     """
@@ -53,13 +54,15 @@ def __calc_sparse_shape(array: np.ndarray, chunksize: int, verbose: bool) -> int
     data_shape = 0
     shape = array.shape
 
-    if (chunksize is None) or (type(array) is np.ndarray):
-        data_shape = np.count_nonzero(array)
+    announce_progress('Counting non-sparse values...')
+    if chunksize is None:
+        data_shape = np.sum(array[:] != sparse_value) if not np.isnan(sparse_value) else np.sum(~np.isnan(array))
 
     else:
         for i in range(0, shape[0], chunksize):
             progress_bar(i, shape[0] // chunksize * chunksize) if verbose else None
-            data_shape += np.count_nonzero(array[i:i + chunksize])
+            data_shape += np.sum(array[i:i + chunksize] != sparse_value) if not np.isnan(sparse_value) \
+                else np.sum(~np.isnan(array[i:i + chunksize]))
 
     return data_shape
 
@@ -106,12 +109,14 @@ def __create_sparse_coords_dictionary(sparse_coords, iteration, chunksize, spars
     return sparse_coords_dict
 
 
-def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize: int, verbose: bool) -> None:
+def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize: int,
+                          sparse_val, verbose: bool) -> None:
     """
     Simultaneously convert and write a dense array to sparse arrays
     :param array: dense numpy array to be converted
     :param path: path to write sparse arrays to
     :param chunksize: chunksize to use for conversion - if None, will convert the whole array in memory
+    :param sparse_val: value to be considered as sparse (default is 0)
     :param verbose: whether to print progress statements
     :return:
     """
@@ -122,18 +127,18 @@ def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize
     announce_progress('Identifying sparse shape...') if verbose else None
     if chunksize > dense_shape[0]:
         chunksize = dense_shape[0]
-    nonzero_shape = __calc_sparse_shape(array, chunksize, verbose)
+    nonsparse_shape = __calc_sparse_shape(array, chunksize, sparse_val, verbose)
 
     # Create the sparse array binaries (memory-mapped)
     memmap_sparse_data = open_memmap(os.path.join(path, 'sparse_data.npy'),
                                      dtype=dense_dtype,
                                      mode='w+',
-                                     shape=(nonzero_shape,))
+                                     shape=(nonsparse_shape,))
 
     memmap_sparse_coords = open_memmap(os.path.join(path, 'sparse_coords.npy'),
                                        dtype=np.int32,
                                        mode='w+',
-                                       shape=(nonzero_shape, len(dense_shape)))
+                                       shape=(nonsparse_shape, len(dense_shape)))
 
     np.save(os.path.join(path, 'dense_shape.npy'), dense_shape)
 
@@ -141,10 +146,10 @@ def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize
     announce_progress('Writing sparse arrays...') if verbose else None
     sparse_index = 0
 
-    if (chunksize is None) or (type(array) is np.ndarray):
-        # Use of the bool dtype accelerates this step
-        sparse_coords = array.astype(bool).nonzero()
-        sparse_values = array[sparse_coords]
+    if chunksize is None:
+        sparse_coords = np.where(array[:] != sparse_val) if not np.isnan(sparse_val) \
+            else np.where(~np.isnan(array[:]))
+        sparse_values = array[:][sparse_coords]
         sparse_coords, sparse_values, sparse_coords_dict = __convert_to_sparse_data(sparse_coords, sparse_values, 0, 0)
 
         memmap_sparse_coords[:] = sparse_coords
@@ -174,17 +179,21 @@ def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize
     return
 
 
-def to_sparse(array: np.ndarray or np.memmap, savepath: 'str', chunksize=1000, verbose=True) -> None:
+def to_sparse(array: np.ndarray or np.memmap, savepath: 'str', chunksize=1000, sparse_value=0, verbose=True) -> None:
     """
     Convert and write a dense array to a sparse array
     :param array: numpy array to be converted
     :param savepath: filepath to write sparse array to
     :param chunksize: number of memmap rows to process at a time if array is np.memmap - if None, will convert the whole array in memory
+    :param sparse_value: value to be considered as sparse (default is 0)
     :param verbose: whether to print progress statements
     :return: None
     """
     if not os.path.isdir(savepath):
         os.makedirs(savepath)
 
-    __write_sparse_arrays(array, savepath, chunksize, verbose)
+    if not isinstance(sparse_value, int) and not isinstance(sparse_value, float) and not np.isnan(sparse_value):
+        raise ValueError('Sparse value must be an integer, float, or NaN')
+
+    __write_sparse_arrays(array, savepath, chunksize, sparse_value, verbose)
     return
