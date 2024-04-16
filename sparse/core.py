@@ -71,7 +71,8 @@ def __calc_sparse_shape(array: np.ndarray, chunksize: int, sparse_ref_value, ver
 
     announce_progress('Counting non-sparse values...')
     if chunksize is None:
-        data_shape = np.sum(array[:] != sparse_ref_value) if not np.isnan(sparse_ref_value) else np.sum(~np.isnan(array))
+        data_shape = np.sum(array[:] != sparse_ref_value) if not np.isnan(sparse_ref_value) else np.sum(
+            ~np.isnan(array))
 
     else:
         for i in range(0, shape[0], chunksize):
@@ -190,7 +191,8 @@ def __write_sparse_arrays(array: np.ndarray or np.memmap, path: 'str', chunksize
     return
 
 
-def to_sparse(array: np.ndarray or np.memmap, savepath: 'str', chunksize=1000, sparse_reference_value=0, verbose=True) -> None:
+def to_sparse(array: np.ndarray or np.memmap, savepath: 'str', chunksize=1000, sparse_reference_value=0,
+              verbose=True) -> None:
     """
     Convert and write a dense array to a sparse array
     :param array: numpy array to be converted
@@ -203,8 +205,88 @@ def to_sparse(array: np.ndarray or np.memmap, savepath: 'str', chunksize=1000, s
     if not os.path.isdir(savepath):
         os.makedirs(savepath)
 
-    if not isinstance(sparse_reference_value, int) and not isinstance(sparse_reference_value, float) and not np.isnan(sparse_reference_value):
+    if not isinstance(sparse_reference_value, int) and not isinstance(sparse_reference_value, float) and not np.isnan(
+            sparse_reference_value):
         raise ValueError('Sparse value must be an integer, float, or NaN')
 
     __write_sparse_arrays(array, savepath, chunksize, sparse_reference_value, verbose)
     return
+
+
+# ========== All the verification functions =========== #
+def verify_sparse(original_array, sparse_array, tests=3, seed=None, step_size=2):
+    random_generator = np.random.default_rng(seed)
+
+    # check single positive integer row
+    _verify_single_pos_int_row(original_array, sparse_array, tests, random_generator)
+    # check single negative integer row
+    _verify_single_neg_int_row(original_array, sparse_array, tests, random_generator)
+    # check slice of rows with positive numbers
+    _verify_slice_pos_int_rows(original_array, sparse_array, tests, random_generator, step_size)
+    # check slice of rows with negative numbers
+    _verify_slice_neg_int_rows(original_array, sparse_array, tests, random_generator, step_size)
+    # check numpy array of multiple rows
+    _verify_numpy_rows(original_array, sparse_array, tests, random_generator, step_size)
+    # check ellipsis <- this checks tuple at the same time
+    _verify_ellipsis(original_array, sparse_array, tests, random_generator, step_size)
+    # check None <- this checks tuple at the same time
+    _verify_none_index(original_array, sparse_array)
+    # check bool indexing
+
+    return
+
+
+def _assert_index(original_array, sparse_array):
+    assert np.allclose(original_array, sparse_array, equal_nan=True)
+
+
+def _verify_single_pos_int_row(original_array, sparse_array, tests: int, rnd_gnr):
+    max_row = original_array.shape[0]
+    rows = rnd_gnr.choice(np.arange(max_row), size=tests, replace=False)
+    for row in rows:
+        _assert_index(original_array[row], sparse_array[row])
+    return
+
+
+def _verify_single_neg_int_row(original_array, sparse_array, tests: int, rnd_gnr):
+    max_row = original_array.shape[0]
+    rows = rnd_gnr.choice(np.arange(-max_row, 0), size=tests, replace=False)
+    for row in rows:
+        _assert_index(original_array[row], sparse_array[row])
+    return
+
+
+def _verify_slice_pos_int_rows(original_array, sparse_array, tests: int, rnd_gnr, step_size):
+    max_row = original_array.shape[0]
+    rows = rnd_gnr.choice(np.arange(max_row-step_size), size=tests, replace=False)
+    for row in rows:
+        _assert_index(original_array[np.arange(row, row+step_size)], sparse_array[slice(row, row+step_size, 1)])
+    return
+
+
+def _verify_slice_neg_int_rows(original_array, sparse_array, tests: int, rnd_gnr, step_size):
+    max_row = original_array.shape[0]
+    rows = rnd_gnr.choice(np.arange(-max_row, -step_size), size=tests, replace=False)
+    for row in rows:
+        _assert_index(original_array[np.arange(row, row+step_size)], sparse_array[slice(row, row+step_size, 1)])
+    return
+
+
+def _verify_ellipsis(original_array, sparse_array, tests: int, rnd_gnr, step_size):
+    _assert_index(original_array[np.s_[0, Ellipsis, 0]], sparse_array[(0, Ellipsis, 0)])
+    return
+
+
+def _verify_numpy_rows(original_array, sparse_array, tests: int, rnd_gnr, step_size):
+    max_row = original_array.shape[0]
+    all_rows = rnd_gnr.choice(np.arange(max_row), size=(tests, step_size), replace=False)
+    for rows in all_rows:
+        _assert_index(original_array[np.sort(rows)], sparse_array[np.sort(rows)])
+    return
+
+
+def _verify_none_index(original_array, sparse_array):
+    sparse_array[(None, 0)]
+    _assert_index(np.expand_dims(original_array[0], 0), sparse_array[(None, 0)])
+    return
+
